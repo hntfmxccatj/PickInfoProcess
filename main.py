@@ -17,7 +17,7 @@ def process_pickup_info(input_data, default_time):
             person = parts[1]
             location = normalize_location(parts[2]) if len(parts) > 2 else ''
             time = parts[3] if len(parts) > 3 else default_time
-            time = re.sub(r'\(.*?\)', '', time).strip().lower()  # Remove remarks and lowercase
+            time = re.sub(r'\(.*?\)', '', time).strip().lower()
             customer_list.append({'Pickup Person': person, 'Pickup time': time, 'Pickup Location': location})
         return customer_list
 
@@ -37,7 +37,7 @@ def process_pickup_info(input_data, default_time):
                 'Pickup Person': '; '.join(persons),
                 'Pickup time': time,
                 'Pickup Location': location.capitalize(),
-                'Number of People': len(persons)  # Add this line
+                'Number of People': len(persons)
             }
             df = pd.DataFrame([data])
             dataframes[(time, location)] = df
@@ -52,6 +52,22 @@ def process_pickup_info(input_data, default_time):
         df['Pickup time'] = df['Pickup time'].dt.strftime('%I:%M%p').str.lower()
 
     return dataframes
+
+
+def merge_dataframes(dataframes):
+    merged = {}
+    for (time, location), df in dataframes.items():
+        key = (df['Car Plate'].iloc[0], df['Mobile'].iloc[0])
+        if key not in merged:
+            merged[key] = df.copy()
+        else:
+            merged[key][
+                'Pickup Person'] += f"\n{location.capitalize()}: {df['Pickup Person'].iloc[0]} ({df['Number of People'].iloc[0]} people)"
+            merged[key]['Pickup Location'] += f", {df['Pickup time'].iloc[0]} at {location.capitalize()}"
+            merged[key]['Number of People'] += df['Number of People'].iloc[0]
+            if pd.to_datetime(df['Pickup time'].iloc[0]) < pd.to_datetime(merged[key]['Pickup time'].iloc[0]):
+                merged[key]['Pickup time'] = df['Pickup time'].iloc[0]
+    return list(merged.values())
 
 
 def parse_car_plate_and_mobile(input_text):
@@ -95,20 +111,17 @@ if st.session_state.dataframes:
     for (time, location), df in st.session_state.dataframes.items():
         st.subheader(f"Pickup at {time} from {location.capitalize()}")
 
+        # Single input field for both Car Plate and Mobile
         input_text = st.text_area(
             f"Enter Car Plate and Mobile for {time} at {location.capitalize()} (Car Plate on first line, Mobile on second line):",
             height=100,
             key=f"input_{time}_{location}")
 
-        lines = input_text.split('\n')
-        car_plate = lines[0].strip() if lines else ''
-        mobile = lines[1].strip() if len(lines) > 1 else ''
+        car_plate, mobile = parse_car_plate_and_mobile(input_text)
 
         if car_plate and mobile:
             df['Car Plate'] = car_plate
             df['Mobile'] = mobile
-
-            # ... rest of the code remains the same
 
             key = (car_plate, mobile)
             if key in merged_dataframes:
@@ -123,51 +136,74 @@ if st.session_state.dataframes:
                 df['Pickup Location'] = f"{df['Pickup time'].iloc[0]} at {location.capitalize()}"
                 merged_dataframes[key] = df
 
-        st.dataframe(df, use_container_width=True)
+        st.dataframe(df, width=1000, height=150)
 
-    if merged_dataframes:
-        st.markdown("---")
-        st.header("Merged Dataframes")
-        for idx, (key, df) in enumerate(merged_dataframes.items()):
-            st.subheader(f"Group {idx + 1}")
+    # Add this after your input section
+    st.markdown("---")
+    st.markdown("<br>", unsafe_allow_html=True)
 
-            # Format the Pickup Person column
-            pickup_persons = df['Pickup Person'].iloc[0].split('\n')
-            formatted_pickup_persons = []
-            for person in pickup_persons:
-                location, names = person.split(':', 1)
+    # Then add the header for Merged Dataframes
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    st.subheader("Merged Dataframes")
+
+    # Custom CSS for table styling
+    st.markdown("""
+    <style>
+        .dataframe td {
+            white-space: pre-wrap;
+        }
+        .bold-location {
+            font-weight: bold;
+        }
+    </style>
+    """, unsafe_allow_html=True)
+
+    for idx, (key, df) in enumerate(merged_dataframes.items()):
+        st.write(f"Group {idx + 1}")
+
+
+        # Format the Pickup Person column with bold location names and line breaks
+        def format_pickup_person(person):
+            parts = person.split(':', 1)
+            if len(parts) == 2:
+                location, names = parts
                 num_people = len(names.split(';'))
-                formatted_pickup_persons.append(f"{location}: {names.strip()} ({num_people} people)")
-            df['Pickup Person'] = '\n'.join(formatted_pickup_persons)
+                return f'<span class="bold-location">{location.strip()}:</span> {names.strip()} ({num_people} people)'
+            else:
+                return person.strip()
 
-            # Sort and format Pickup Location
-            locations = df['Pickup Location'].iloc[0].split(', ')
-            sorted_locations = sorted(locations, key=lambda x: pd.to_datetime(x.split(' at ')[0]))
-            df['Pickup Location'] = ', '.join(sorted_locations)
 
-            # Apply styling to the dataframe
-            styled_df = df.style.set_properties(**{
-                'background-color': '#f0f2f6',
-                'color': 'black',
-                'border-color': 'white'
-            })
-            styled_df = styled_df.set_table_styles([
-                {'selector': 'th', 'props': [('background-color', '#4e73df'), ('color', 'white')]},
-                {'selector': 'td', 'props': [('padding', '10px')]},
-            ])
+        pickup_persons = df['Pickup Person'].iloc[0].split('\n')
+        formatted_pickup_persons = [format_pickup_person(person) for person in pickup_persons]
+        df['Pickup Person'] = '<br>'.join(formatted_pickup_persons)
 
-            st.dataframe(styled_df, use_container_width=True, height=200)
+        # Sort and format Pickup Location
+        locations = df['Pickup Location'].iloc[0].split(', ')
+        sorted_locations = sorted(locations, key=lambda x: pd.to_datetime(x.split(' at ')[0]))
+        df['Pickup Location'] = '<br>'.join(sorted_locations)
 
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                df.to_excel(writer, sheet_name='Pickup Info', index=False)
+        # Prepare DataFrame for Excel export (without HTML formatting)
+        export_df = df.copy()
+        export_df['Pickup Person'] = export_df['Pickup Person'].str.replace('<br>', '\n')
+        export_df['Pickup Person'] = export_df['Pickup Person'].str.replace('<span class="bold-location">', '')
+        export_df['Pickup Person'] = export_df['Pickup Person'].str.replace('</span>', '')
+        export_df['Pickup Location'] = export_df['Pickup Location'].str.replace('<br>', ', ')
 
-            st.download_button(
-                label=f"Download Excel file for Group {idx + 1}",
-                data=buffer.getvalue(),
-                file_name=f"pickup_info_group_{idx + 1}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"download_group_{idx + 1}"
-            )
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            export_df.to_excel(writer, sheet_name='Pickup Info', index=False)
 
-            st.markdown("---")
+        # Place the download button here, before the dataframe display
+        st.download_button(
+            label=f"Download Excel file for Group {idx + 1}",
+            data=buffer.getvalue(),
+            file_name=f"pickup_info_group_{idx + 1}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"download_group_{idx + 1}"
+        )
+
+        # Display the dataframe
+        st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+
+        st.markdown("---")
