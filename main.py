@@ -57,17 +57,57 @@ def process_pickup_info(input_data, default_time):
 def merge_dataframes(dataframes):
     merged = {}
     for (time, location), df in dataframes.items():
-        key = (df['Car Plate'].iloc[0], df['Mobile'].iloc[0])
-        if key not in merged:
-            merged[key] = df.copy()
-        else:
-            merged[key][
-                'Pickup Person'] += f"\n{location.capitalize()}: {df['Pickup Person'].iloc[0]} ({df['Number of People'].iloc[0]} people)"
-            merged[key]['Pickup Location'] += f", {df['Pickup time'].iloc[0]} at {location.capitalize()}"
-            merged[key]['Number of People'] += df['Number of People'].iloc[0]
-            if pd.to_datetime(df['Pickup time'].iloc[0]) < pd.to_datetime(merged[key]['Pickup time'].iloc[0]):
-                merged[key]['Pickup time'] = df['Pickup time'].iloc[0]
-    return list(merged.values())
+        if 'Car Plate' in df.columns and 'Mobile' in df.columns:
+            key = (df['Car Plate'].iloc[0], df['Mobile'].iloc[0])
+            pickup_time = pd.to_datetime(df['Pickup time'].iloc[0])
+
+            if key not in merged:
+                merged[key] = {
+                    'Pickup Person': f"{location.capitalize()}: {df['Pickup Person'].iloc[0]} ({df['Number of People'].iloc[0]} people)",
+                    'Pickup time': pickup_time,
+                    'Pickup Location': f"{pickup_time.strftime('%I:%M%p').lower()} at {location.capitalize()}",
+                    'Number of People': df['Number of People'].iloc[0],
+                    'Car Plate': key[0],
+                    'Mobile': key[1],
+                    'Pickup Times': [pickup_time]
+                }
+            else:
+                existing_entry = merged[key]
+                existing_entry[
+                    'Pickup Person'] += f"\n{location.capitalize()}: {df['Pickup Person'].iloc[0]} ({df['Number of People'].iloc[0]} people)"
+                existing_entry[
+                    'Pickup Location'] += f"\n{pickup_time.strftime('%I:%M%p').lower()} at {location.capitalize()}"
+                existing_entry['Number of People'] += df['Number of People'].iloc[0]
+                existing_entry['Pickup Times'].append(pickup_time)
+                existing_entry['Pickup time'] = min(existing_entry['Pickup Times'])
+
+    # Format and create DataFrames
+    merged_dataframes = []
+    for entry in merged.values():
+        entry['Pickup Person'] = format_pickup_person(entry['Pickup Person'])
+        entry['Pickup Location'] = format_pickup_location(entry['Pickup Location'], entry['Pickup Times'])
+        entry['Pickup time'] = entry['Pickup time'].strftime('%I:%M%p').lower()  # Format as "08:00am"
+        del entry['Pickup Times']
+        merged_dataframes.append(pd.DataFrame([entry]))
+
+    return merged_dataframes
+
+
+def format_pickup_person(person):
+    lines = person.split('\n')
+    formatted_lines = []
+    for line in lines:
+        parts = line.split(':', 1)
+        if len(parts) == 2:
+            location, names_and_count = parts
+            formatted_lines.append(f'<span class="bold-location">{location.strip()}:</span> {names_and_count.strip()}')
+    return '<br>'.join(formatted_lines)
+
+
+def format_pickup_location(location, times):
+    locations = location.split('\n')
+    sorted_locations = sorted(zip(times, locations), key=lambda x: x[0])
+    return '<br>'.join([loc for _, loc in sorted_locations])
 
 
 def parse_car_plate_and_mobile(input_text):
@@ -100,18 +140,19 @@ default_time = st.text_input('Enter default pickup time (e.g., 8:00am):', '8:00a
 if 'dataframes' not in st.session_state:
     st.session_state.dataframes = {}
 
+if 'merged_dataframes' not in st.session_state:
+    st.session_state.merged_dataframes = []
+
 if st.button('Process Pickup Information'):
     if input_data:
         st.session_state.dataframes = process_pickup_info(input_data, default_time)
+        st.session_state.merged_dataframes = []
         st.success("Data processed successfully. Please enter Car Plate and Mobile information for each group below.")
 
 if st.session_state.dataframes:
-    merged_dataframes = {}
-
     for (time, location), df in st.session_state.dataframes.items():
         st.subheader(f"Pickup at {time} from {location.capitalize()}")
 
-        # Single input field for both Car Plate and Mobile
         input_text = st.text_area(
             f"Enter Car Plate and Mobile for {time} at {location.capitalize()} (Car Plate on first line, Mobile on second line):",
             height=100,
@@ -120,90 +161,99 @@ if st.session_state.dataframes:
         car_plate, mobile = parse_car_plate_and_mobile(input_text)
 
         if car_plate and mobile:
-            df['Car Plate'] = car_plate
-            df['Mobile'] = mobile
+            st.session_state.dataframes[(time, location)]['Car Plate'] = car_plate
+            st.session_state.dataframes[(time, location)]['Mobile'] = mobile
 
-            key = (car_plate, mobile)
-            if key in merged_dataframes:
-                existing_df = merged_dataframes[key]
-                existing_df['Pickup Person'] += f"\n{location.capitalize()}: {df['Pickup Person'].iloc[0]}"
-                existing_df['Pickup Location'] += f", {df['Pickup time'].iloc[0]} at {location.capitalize()}"
-                existing_df['Number of People'] += df['Number of People'].iloc[0]
-                if pd.to_datetime(df['Pickup time'].iloc[0]) < pd.to_datetime(existing_df['Pickup time'].iloc[0]):
-                    existing_df['Pickup time'] = df['Pickup time'].iloc[0]
-            else:
-                df['Pickup Person'] = f"{location.capitalize()}: {df['Pickup Person'].iloc[0]}"
-                df['Pickup Location'] = f"{df['Pickup time'].iloc[0]} at {location.capitalize()}"
-                merged_dataframes[key] = df
+            st.session_state.merged_dataframes = merge_dataframes(st.session_state.dataframes)
 
-        st.dataframe(df, width=1000, height=150)
+        st.dataframe(df, width=1200)
 
-    # Add this after your input section
     st.markdown("---")
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    # Then add the header for Merged Dataframes
     st.markdown("<br>", unsafe_allow_html=True)
 
     st.subheader("Merged Dataframes")
 
-    # Custom CSS for table styling
     st.markdown("""
     <style>
-        .dataframe td {
-            white-space: pre-wrap;
+        .styled-table {
+            border-collapse: collapse;
+            margin: 25px 0;
+            font-size: 0.9em;
+            font-family: sans-serif;
+            min-width: 400px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
+        }
+        .styled-table thead tr {
+            background-color: #009879;
+            color: #ffffff;
+            text-align: left;
+        }
+        .styled-table th,
+        .styled-table td {
+            padding: 12px 15px;
+        }
+        .styled-table tbody tr {
+            border-bottom: 1px solid #dddddd;
+        }
+        .styled-table tbody tr:nth-of-type(even) {
+            background-color: #f3f3f3;
+        }
+        .styled-table tbody tr:last-of-type {
+            border-bottom: 2px solid #009879;
         }
         .bold-location {
             font-weight: bold;
+            color: #009879;
+        }
+        .group-header {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-top: 20px;
+            margin-bottom: 10px;
+            color: #009879;
         }
     </style>
     """, unsafe_allow_html=True)
 
-    for idx, (key, df) in enumerate(merged_dataframes.items()):
-        st.write(f"Group {idx + 1}")
+    for idx, df in enumerate(st.session_state.merged_dataframes):
+        st.markdown(f"<div class='group-header'>Group {idx + 1}</div>", unsafe_allow_html=True)
 
+        new_pickup_time = st.text_input(f"Edit Pickup Time for Group {idx + 1}", value=df.at[0, 'Pickup time'],
+                                        key=f"time_{idx}")
+        new_pickup_location = st.text_input(f"Edit Pickup Location for Group {idx + 1}",
+                                            value=df.at[0, 'Pickup Location'], key=f"location_{idx}")
 
-        # Format the Pickup Person column with bold location names and line breaks
-        def format_pickup_person(person):
-            parts = person.split(':', 1)
-            if len(parts) == 2:
-                location, names = parts
-                num_people = len(names.split(';'))
-                return f'<span class="bold-location">{location.strip()}:</span> {names.strip()} ({num_people} people)'
-            else:
-                return person.strip()
+        df.at[0, 'Pickup time'] = new_pickup_time
+        df.at[0, 'Pickup Location'] = new_pickup_location
 
-
-        pickup_persons = df['Pickup Person'].iloc[0].split('\n')
-        formatted_pickup_persons = [format_pickup_person(person) for person in pickup_persons]
-        df['Pickup Person'] = '<br>'.join(formatted_pickup_persons)
-
-        # Sort and format Pickup Location
-        locations = df['Pickup Location'].iloc[0].split(', ')
-        sorted_locations = sorted(locations, key=lambda x: pd.to_datetime(x.split(' at ')[0]))
-        df['Pickup Location'] = '<br>'.join(sorted_locations)
-
-        # Prepare DataFrame for Excel export (without HTML formatting)
+        # excel file without HTML formatting
         export_df = df.copy()
         export_df['Pickup Person'] = export_df['Pickup Person'].str.replace('<br>', '\n')
         export_df['Pickup Person'] = export_df['Pickup Person'].str.replace('<span class="bold-location">', '')
         export_df['Pickup Person'] = export_df['Pickup Person'].str.replace('</span>', '')
-        export_df['Pickup Location'] = export_df['Pickup Location'].str.replace('<br>', ', ')
+        export_df['Pickup Location'] = export_df['Pickup Location'].str.replace('<br>', '\n')
 
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-            export_df.to_excel(writer, sheet_name='Pickup Info', index=False)
-
-        # Place the download button here, before the dataframe display
-        st.download_button(
-            label=f"Download Excel file for Group {idx + 1}",
-            data=buffer.getvalue(),
-            file_name=f"pickup_info_group_{idx + 1}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key=f"download_group_{idx + 1}"
-        )
-
-        # Display the dataframe
-        st.write(df.to_html(escape=False, index=False), unsafe_allow_html=True)
+        html_table = df.to_html(escape=False, index=False, classes='styled-table')
+        st.write(html_table, unsafe_allow_html=True)
 
         st.markdown("---")
+
+    # Button to download all merged dataframes in one Excel file
+    if st.session_state.merged_dataframes:
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+            for idx, df in enumerate(st.session_state.merged_dataframes):
+                export_df = df.copy()
+                export_df['Pickup Person'] = export_df['Pickup Person'].str.replace('<br>', '\n')
+                export_df['Pickup Person'] = export_df['Pickup Person'].str.replace('<span class="bold-location">', '')
+                export_df['Pickup Person'] = export_df['Pickup Person'].str.replace('</span>', '')
+                export_df['Pickup Location'] = export_df['Pickup Location'].str.replace('<br>', '\n')
+                export_df.to_excel(writer, sheet_name=f'Group {idx + 1}', index=False)
+
+        st.download_button(
+            label="Download Excel file with all groups",
+            data=buffer.getvalue(),
+            file_name="all_merged_dataframes.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="download_all"
+        )
