@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 import io
-import xlsxwriter
+
 
 def normalize_location(location):
     return re.sub(r'\s', '', location).lower()
