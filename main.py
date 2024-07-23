@@ -3,7 +3,6 @@ import pandas as pd
 import re
 import io
 
-
 def normalize_location(location):
     return re.sub(r'\s', '', location).lower()
 
@@ -28,16 +27,20 @@ def process_pickup_info(input_data, default_time):
         customer_list = []
         pickup_date = None
         for entry in entries:
-            if entry.startswith("Pickup time:"):
-                pickup_date = entry.split("Pickup time:")[1].strip()
-            elif entry[0].isdigit():
-                parts = re.split(r'\s*-\s*', entry.strip())
-                person = parts[1]
+            if entry.lower().startswith("pickup time:"):
+                pickup_date = re.search(r'\d+(?:st|nd|rd|th)?\s+\w+', entry)
+                pickup_date = pickup_date.group() if pickup_date else None
+            elif entry[0].isdigit() and "Ex:" not in entry:  # Ignore lines with "Ex:"
+                parts = re.split(r'\s*[-~]\s*', entry.strip(), maxsplit=3)
+                person = parts[1] if len(parts) > 1 else ''
                 location = normalize_location(parts[2]) if len(parts) > 2 else ''
                 time = parts[3] if len(parts) > 3 else default_time
                 time = re.sub(r'\(.*?\)', '', time).strip().lower()
                 customer_list.append({'Pickup Person': person, 'Pickup time': time, 'Pickup Location': location, 'Date': pickup_date})
         return customer_list
+
+    def normalize_location(location):
+        return location.lower().strip()
 
     def group_by_pickup(customers):
         grouped_customers = {}
@@ -117,20 +120,25 @@ def parse_car_plate_and_mobile(input_text):
 
 st.title('Pickup Information Processor')
 
-default_content = """Pickup time: 23th July
-1- Eric peng-Ritz -9:00AM(Remark Special time)
-2- Cai Chunhui -parkhyatt
-3- CL Lim - pArkhyatt 
-4- Sam Yuen - Park Hyatt - 7:40am
-5- Bo Xu - Park Hyatt
-6- Arman - ritz
-8- Steven - Park Hyatt
-8- Shengyang@Meta - Ritz
-9- Jolley W - Ritz
-110- dana Jensen  - W
-11- Abel - parkhyaTT  -           7:40aM
-12- Wilkins - RitZ -7:40Am 
-15 - Gogo - ritz - 8:30Am"""
+default_content = """#班车接龙(Transportation Solitaire)
+ 
+AM Pick
+ 
+From Hotel to Factory
+Pickup time: 23th July 8:05~8:10AM
+ 
+1- Ex: Eric peng-Ritz -9:00AM(Remark Special time)
+2- Sam Shi-Westin
+3- Nick Guo - park hyatt
+4- Nishant Jayant - ritz
+5- Paul Chow - Ritz
+6- Enki xie - Park Hyatt
+7- Jolley W - Ritz
+8- Audrey Louchart - Ritz
+9- Marc Vivant - Park Hyatt
+11- Steven Z. - Park Hyatt
+ 
+Deadline:Tonight at 7:30pm"""
 
 input_data = st.text_area('Enter pickup information (one entry per line):', value=default_content, height=300, key="input_data_1")
 default_time = st.text_input('Enter default pickup time (e.g., 8:00am):', '8:00am')
