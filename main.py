@@ -123,13 +123,7 @@ def parse_car_plate_and_mobile(input_text):
 
 st.title('Pickup Information Processor')
 
-default_content = """#班车接龙(Transportation Solitaire)
- 
-AM Pick
- 
-From Hotel to Factory
-Pickup time: 23th July 8:05~8:10AM
- 
+default_content = """Pickup time: 23th July 8:05~8:10AM
 1- Ex: Eric peng-Ritz -9:00AM(Remark Special time)
 2- Sam Shi-Westin
 3- Nick Guo - park hyatt
@@ -139,11 +133,9 @@ Pickup time: 23th July 8:05~8:10AM
 7- Jolley W - Ritz
 8- Audrey Louchart - Ritz
 9- Marc Vivant - Park Hyatt
-11- Steven Z. - Park Hyatt
- 
-Deadline:Tonight at 7:30pm"""
+11- Steven Z. - Park Hyatt"""
 
-input_data = st.text_area('Enter pickup information (one entry per line):', height=300, key="input_data_1")
+input_data = st.text_area('Enter pickup information (one entry per line):', value=default_content, height=300, key="input_data_1")
 default_time = st.text_input('Enter default pickup time (e.g., 8:00am):', '8:00am')
 
 if 'dataframes' not in st.session_state:
