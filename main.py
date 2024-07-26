@@ -3,8 +3,11 @@ import pandas as pd
 import re
 import io
 
+
+# removes all whitespace characters from location
 def normalize_location(location):
     return re.sub(r'\s', '', location).lower()
+
 
 def format_pickup_person(person):
     lines = person.split('\n')
@@ -188,7 +191,7 @@ if st.session_state.dataframes:
             margin: 25px 0;
             font-size: 0.9em;
             font-family: sans-serif;
-            min-width: 400px;
+            min-width: 600px;
             box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
         }
         .styled-table thead tr {
@@ -224,6 +227,7 @@ if st.session_state.dataframes:
     """, unsafe_allow_html=True)
 
     for idx, df in enumerate(st.session_state.merged_dataframes):
+
         df = df.drop("Number of People", axis=1)
 
         new_order = ['Pickup Person', 'Date', 'Pickup time', 'Pickup Location', 'Car Plate', 'Mobile']
@@ -248,6 +252,8 @@ if st.session_state.dataframes:
         export_df['Pickup Person'] = export_df['Pickup Person'].str.replace('</span>', '')
         export_df['Pickup Location'] = export_df['Pickup Location'].str.replace('<br>', '\n')
 
+        df = df.drop("Pickup time", axis=1)
+
         # Display the dataframe with the new styling
         html_table = df.to_html(escape=False, index=False, classes='styled-table')
         st.write(html_table, unsafe_allow_html=True)
@@ -263,6 +269,8 @@ if st.session_state.dataframes:
 
                 new_order = ['Pickup Person', 'Date', 'Pickup time', 'Pickup Location', 'Car Plate', 'Mobile']
                 df = df[new_order]
+
+                df = df.drop("Pickup time", axis=1)
 
                 export_df = df.copy()
                 export_df['Pickup Person'] = export_df['Pickup Person'].str.replace('<br>', '\n')
