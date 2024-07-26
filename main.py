@@ -143,7 +143,7 @@ Pickup time: 23th July 8:05~8:10AM
  
 Deadline:Tonight at 7:30pm"""
 
-input_data = st.text_area('Enter pickup information (one entry per line):', value=default_content, height=300, key="input_data_1")
+input_data = st.text_area('Enter pickup information (one entry per line):', height=300, key="input_data_1")
 default_time = st.text_input('Enter default pickup time (e.g., 8:00am):', '8:00am')
 
 if 'dataframes' not in st.session_state:
