@@ -145,7 +145,7 @@ if 'input_data' not in st.session_state:
 if 'default_time' not in st.session_state:
     st.session_state.default_time = '8:00am'
 
-input_data = st.text_area('Enter pickup information (one entry per line):', value=st.session_state.input_data,
+input_data = st.text_area('Enter pickup information (one entry per line):', 
                           height=300, key="input_data_1")
 default_time = st.text_input('Enter default pickup time (e.g., 8:00am):', st.session_state.default_time)
 
